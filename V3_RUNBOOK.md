@@ -37,6 +37,13 @@ Short on time? First run `python code/business_entity_resolution/src/train_unive
 
 If RAM runs out on the biggest country (train US pool is about 6M records), send the console log. The next step would be sharding the Silver pool dict.
 
+## Time-boxed option: `scripts/run_v3_6h.ps1`
+- Builds the test universe in a background process while training runs (only if RAM ≥ 24 GB).
+- Trains India first, then US.
+- Every country is checkpointed in `universe_stats.json`, so rerunning the same command resumes instead of rebuilding.
+- Fallback if time runs out: `python src/train_universe.py --skip-build --countries India` trains on the completed countries only.
+- NOTE: the resume, `--build-only` and parallel-runner code was added after the synthetic smoke test and has **not been executed**. If it errors, use `run_v3.ps1`, which uses the tested path. Its core logic is unchanged apart from the checkpointing.
+
 ## Submission plan (5 left)
 1. **Sub 1: `matching_results_base.tsv`.** Its LB score, together with the honest OOF on US/India, gives the France score by subtraction: LB ≈ 0.85·OOF(US,IN) + 0.15·F(France).
 2. **Sub 2: `unseen05`**, but only if the implied France score is well below US/India. This is the one LB probe that is justified, because France has no labels.

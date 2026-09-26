@@ -54,7 +54,8 @@ def parse_args():
     ap.add_argument("--work-dir", default=os.path.join(config.BASE_DIR, "artifacts", "train_universe"))
     ap.add_argument("--model-dir", default=os.path.join(config.MODEL_DIR, "v3"))
     ap.add_argument("--countries", nargs="*", default=None)
-    ap.add_argument("--skip-build", action="store_true")
+    ap.add_argument("--skip-build", action="store_true", help="use completed countries only")
+    ap.add_argument("--rebuild", action="store_true", help="ignore checkpoints, rebuild all")
     ap.add_argument("--train-frac", type=float, default=0.25,
                     help="fraction of S1 (per fold complement) used to fit each fold model")
     ap.add_argument("--n-estimators", type=int, default=600)
@@ -82,13 +83,17 @@ def main():
     gtp = os.path.join(tr, "train_ground_truth.tsv")
 
     # ---------- 1. Universe ----------
-    if not a.skip_build or not glob.glob(os.path.join(a.work_dir, "feat_*.parquet")):
-        for f in glob.glob(os.path.join(a.work_dir, "feat_*.parquet")):
-            os.remove(f)
-        ustats = build_universe(s1p, s2p, s3p, a.work_dir, countries=a.countries, log=log)
+    if not a.skip_build:
+        build_universe(s1p, s2p, s3p, a.work_dir, countries=a.countries, log=log, resume=not a.rebuild)
+    with open(os.path.join(a.work_dir, "universe_stats.json")) as f:
+        ustats = json.load(f)
+    built = list(ustats["countries"])
+    if a.countries:
+        missing = [c for c in a.countries if c not in built]
+        if missing:
+            raise SystemExit(f"countries not built yet: {missing}; built: {built}")
     else:
-        with open(os.path.join(a.work_dir, "universe_stats.json")) as f:
-            ustats = json.load(f)
+        a.countries = built   # train on every COMPLETED country only
     log(f"universe: {json.dumps(ustats)}")
 
     # ---------- 2. GT / S1 table ----------
@@ -119,7 +124,10 @@ def main():
           FROM read_csv('{gtp}', {rd})
           WHERE matched_entity_ids IS NOT NULL AND trim(matched_entity_ids) <> '')""")
 
-    files = sorted(glob.glob(os.path.join(a.work_dir, "feat_*.parquet")))
+    def safe(c):
+        return "".join(ch if ch.isalnum() else "_" for ch in str(c))
+    files = sorted(p for c in a.countries
+                   for p in glob.glob(os.path.join(a.work_dir, f"feat_{safe(c)}_*.parquet")))
     feat_sql = ", ".join(f'f."{c}"' for c in FEATURE_NAMES)
 
     def load(path, where="TRUE"):

@@ -101,7 +101,7 @@ def _featurize_s1(sid, s1_nums, s1_has_addr, cand_ids, base_feats, pool, rev):
 
 def build_universe(s1_path: str, s2_path: str, s3_path: str, out_dir: str,
                    top_k: Optional[int] = None, countries: Optional[List[str]] = None,
-                   batch_size: int = 50000, log=print) -> dict:
+                   batch_size: int = 50000, log=print, resume: bool = True) -> dict:
     """
     For each country: full-pool blocking for every S1, reverse context over all S1 of the
     country, 43 features -> parquet chunks `feat_<country>_<b>.parquet` and candidate lists
@@ -114,11 +114,22 @@ def build_universe(s1_path: str, s2_path: str, s3_path: str, out_dir: str,
 
     bronze = BronzeIngestionEngine(threads=8)
     all_countries = [c for c, _ in bronze.get_test_countries(s1_path)]
-    todo = [c for c in all_countries if countries is None or c in countries]
+    # explicit order if given (smallest first = earliest usable fallback), else file order
+    todo = [c for c in countries if c in all_countries] if countries else all_countries
+    stats_path = os.path.join(out_dir, "universe_stats.json")
     stats = {"top_k": top_k, "countries": {}}
+    if resume and os.path.exists(stats_path):
+        with open(stats_path) as f:
+            prev = json.load(f)
+        if prev.get("top_k") == top_k:
+            stats = prev
+    done = set(stats["countries"])
     t_all = time.time()
 
     for country in todo:
+        if str(country) in done:
+            log(f"[universe] {country}: already built, skipping (resume)")
+            continue
         t0 = time.time()
         safe = "".join(ch if ch.isalnum() else "_" for ch in str(country))
         s1_c, s23_c = bronze.load_country_data(s1_path, s2_path, s3_path, country)
@@ -159,7 +170,11 @@ def build_universe(s1_path: str, s2_path: str, s3_path: str, out_dir: str,
                     chunk.append((row.entity_id, sil['nums'], sil['has_addr'], cids, feats))
                 joblib.dump(chunk, os.path.join(tmp_dir, f"q_{safe}_{b}.joblib"), compress=1)
                 del chunk
-                log(f"[universe] {country}: blocked {min((b+1)*batch_size, len(s1_c)):,}/{len(s1_c):,}")
+                done_n = min((b + 1) * batch_size, len(s1_c))
+                el = time.time() - t0
+                eta = el / done_n * (len(s1_c) - done_n)
+                log(f"[universe] {country}: blocked {done_n:,}/{len(s1_c):,} "
+                    f"elapsed {el/60:.1f}m, blocking ETA {eta/60:.1f}m (features pass adds ~30-50%)")
         del gold
         gc.collect()
 
@@ -204,10 +219,12 @@ def build_universe(s1_path: str, s2_path: str, s3_path: str, out_dir: str,
             "seconds": round(time.time() - t0, 1),
         }
         log(f"[universe] {country}: {n_rows:,} pairs in {time.time()-t0:.0f}s")
+        with open(stats_path, "w") as f:   # checkpoint: country complete
+            json.dump(stats, f, indent=2)
 
     if not os.listdir(tmp_dir):
         os.rmdir(tmp_dir)
     stats["seconds"] = round(time.time() - t_all, 1)
-    with open(os.path.join(out_dir, "universe_stats.json"), "w") as f:
+    with open(stats_path, "w") as f:
         json.dump(stats, f, indent=2)
     return stats

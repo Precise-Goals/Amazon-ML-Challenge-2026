@@ -40,6 +40,9 @@ def parse_args():
     ap.add_argument("--th-s2", type=float, default=None, help="override tuned threshold")
     ap.add_argument("--th-s3", type=float, default=None, help="override tuned threshold")
     ap.add_argument("--tag", default="", help="suffix for a copy of the outputs, e.g. fr05")
+    ap.add_argument("--build-only", action="store_true",
+                    help="only build the test universe (no models needed); run in parallel with training")
+    ap.add_argument("--rebuild", action="store_true")
     return ap.parse_args()
 
 
@@ -48,6 +51,10 @@ def main():
     t0 = time.time()
     te = os.path.join(a.data_dir, "test")
     s1p, s2p, s3p = (os.path.join(te, f"test_source{i}.tsv") for i in (1, 2, 3))
+    if a.build_only:
+        build_universe(s1p, s2p, s3p, a.work_dir, top_k=config.UNIVERSE_TOP_K, resume=not a.rebuild)
+        print("test universe built", flush=True)
+        return
     with open(os.path.join(a.model_dir, "decision.json")) as f:
         dec = json.load(f)
     assert dec["features"] == FEATURE_NAMES, "model/featurizer mismatch: retrain"
@@ -57,13 +64,13 @@ def main():
     iso = joblib.load(os.path.join(a.model_dir, "isotonic.joblib"))
     print(f"models={len(models)} th_s2={th2} th_s3={th3} unseen_offset={a.unseen_offset}", flush=True)
 
-    if not a.skip_build or not glob.glob(os.path.join(a.work_dir, "feat_*.parquet")):
-        for f in glob.glob(os.path.join(a.work_dir, "feat_*.parquet")):
-            os.remove(f)
-        ustats = build_universe(s1p, s2p, s3p, a.work_dir, top_k=dec.get("top_k"))
-    else:
-        with open(os.path.join(a.work_dir, "universe_stats.json")) as f:
-            ustats = json.load(f)
+    if not a.skip_build:
+        build_universe(s1p, s2p, s3p, a.work_dir, top_k=dec.get("top_k"), resume=not a.rebuild)
+    with open(os.path.join(a.work_dir, "universe_stats.json")) as f:
+        ustats = json.load(f)
+    n_test_ctry = len(BronzeIngestionEngine().get_test_countries(s1p))
+    if len(ustats["countries"]) < n_test_ctry:
+        raise SystemExit(f"test universe incomplete: {list(ustats['countries'])}; rerun without --skip-build")
 
     # score; keep only rows that pass their threshold (exclusivity among survivors is
     # identical to global exclusivity because a candidate's rows share one threshold)
