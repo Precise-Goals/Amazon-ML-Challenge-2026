@@ -1,0 +1,40 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Large Datasets (Exceeds GitHub 100MB limit)
+datasource/dataset/
+*.tsv
+*.csv
+*.parquet
+
+# Submission Outputs & Large Archives (Exceeds GitHub 100MB limit)
+output/
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.rar
+
+# Python Environments & Dependencies
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE & OS Metadata
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.vscode/
+.idea/
+
+# Scratch & Logs
+*.log
+scratch/
