@@ -285,6 +285,10 @@ def predict_pipeline(model_wrapper: EntityResolutionModel = None):
                 s1, _, rest = line.partition("\t")
                 all_chunks_cand[s1] = rest.rstrip("\n")
                 
+    # Clean temporary chunk folder
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+        
     # 1. Bipartite Disjoint Disambiguation & Co-Tenant Budget Gating
     print("Applying Global Bipartite Disjoint Matching & Co-Tenant Budget Gating...", flush=True)
     cand_to_s1 = defaultdict(list)
@@ -357,7 +361,83 @@ def predict_pipeline(model_wrapper: EntityResolutionModel = None):
                     new_m.append(c)
             all_chunks_match[s1] = ",".join(new_m)
             
-    # 2. Write matching_results.tsv
+    # 2. Co-Tenant Street Number Pruning and Source Budget Constraint (max 3 from S2, max 3 from S3)
+    print("Applying Co-Tenant Street Number Conflict Pruning & Source Budget Gating...", flush=True)
+    s1_to_check = {s1 for s1, m_str in all_chunks_match.items() if m_str and len(m_str.split(",")) >= 4}
+    if s1_to_check:
+        import duckdb
+        con_p = duckdb.connect()
+        con_p.execute("PRAGMA threads=8")
+        
+        candidates_to_check = set()
+        for s1 in s1_to_check:
+            for c in all_chunks_match[s1].split(","):
+                c = c.strip()
+                if c:
+                    candidates_to_check.add(c)
+                    
+        s1_chk_df = pd.DataFrame({'entity_id': list(s1_to_check)})
+        s1_df_p = con_p.query(f"""
+            SELECT entity_id, business_name, business_address FROM read_csv('{config.TEST_S1}', delim='\\t', header=True)
+            WHERE entity_id IN (SELECT entity_id FROM s1_chk_df)
+        """).df()
+        s1_data_p = {r.entity_id: (str(r.business_name or "").lower(), str(r.business_address or "").lower()) for r in s1_df_p.itertuples()}
+        
+        cand_chk_df = pd.DataFrame({'entity_id': list(candidates_to_check)})
+        cand_df_p = con_p.query(f"""
+            SELECT entity_id, business_name, business_address FROM read_csv('{config.TEST_S2}', delim='\\t', header=True)
+            WHERE entity_id IN (SELECT entity_id FROM cand_chk_df)
+            UNION ALL
+            SELECT entity_id, business_name, business_address FROM read_csv('{config.TEST_S3}', delim='\\t', header=True)
+            WHERE entity_id IN (SELECT entity_id FROM cand_chk_df)
+        """).df()
+        cand_data_p = {r.entity_id: (str(r.business_name or "").lower(), str(r.business_address or "").lower()) for r in cand_df_p.itertuples()}
+        
+        def _extract_nums(addr):
+            raw = re.findall(r'\b\d+\b', addr)
+            return {str(int(n)) for n in raw if len(n) <= 5}
+            
+        for s1 in s1_to_check:
+            m_list = [c.strip() for c in all_chunks_match[s1].split(",") if c.strip()]
+            s_name, s_addr = s1_data_p.get(s1, ("", ""))
+            s_nums = _extract_nums(s_addr)
+            
+            scored_candidates = []
+            for c in m_list:
+                c_name, c_addr = cand_data_p.get(c, ("", ""))
+                c_nums = _extract_nums(c_addr)
+                
+                # Check street number conflict
+                if s_nums and c_nums and not s_nums.intersection(c_nums):
+                    tsort = fuzz.token_sort_ratio(s_name, c_name)
+                    if tsort < 80:
+                        continue
+                        
+                n_sim = fuzz.token_set_ratio(s_name, c_name)
+                a_sim = fuzz.token_set_ratio(s_addr, c_addr) if s_addr and c_addr else 0.0
+                sc = 0.6 * n_sim + 0.4 * a_sim
+                scored_candidates.append((c, sc))
+                
+            scored_candidates.sort(key=lambda x: x[1], reverse=True)
+            final_list = []
+            s2_cnt = 0
+            s3_cnt = 0
+            for c, sc in scored_candidates:
+                if c.startswith('S2-'):
+                    if s2_cnt >= 3:
+                        continue
+                    s2_cnt += 1
+                elif c.startswith('S3-'):
+                    if s3_cnt >= 3:
+                        continue
+                    s3_cnt += 1
+                final_list.append(c)
+            all_chunks_match[s1] = ",".join(final_list)
+            
+        del con_p, s1_chk_df, cand_chk_df, s1_df_p, cand_df_p, s1_data_p, cand_data_p
+        gc.collect()
+        
+    # 3. Write matching_results.tsv
     print(f"Saving {config.MATCHING_OUTPUT}...", flush=True)
     matched_count = 0
     singleton_count = 0
@@ -374,7 +454,7 @@ def predict_pipeline(model_wrapper: EntityResolutionModel = None):
                 singleton_count += 1
             f.write(f"{s1_id}\t{val}\n")
             
-    # 3. Write candidate_pairs.tsv
+    # 4. Write candidate_pairs.tsv
     print(f"Saving {config.CANDIDATE_OUTPUT}...", flush=True)
     total_cands_written = 0
     with open(config.CANDIDATE_OUTPUT, "w", encoding="utf-8") as f:
@@ -395,7 +475,7 @@ def predict_pipeline(model_wrapper: EntityResolutionModel = None):
     print(f"  Avg Candidates per S1: {avg_cands:.2f}")
     print(f"  Total Inference Time: {time.time()-t0:.2f}s")
     
-    # 4. Automatic Validation Check
+    # 5. Automatic Validation Check
     validator_path = os.path.join(config.BASE_DIR, "datasource", "utils", "validate_submission.py")
     if os.path.exists(validator_path):
         print("\n" + "=" * 60)
