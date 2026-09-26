@@ -6,13 +6,16 @@ import os
 import joblib
 import numpy as np
 import lightgbm as lgb
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Optional
+
 try:
     from .config import config
     from .utils import calculate_macro_f05
+    from .gold import GoldResolutionEngine
 except (ImportError, ValueError):
     from config import config
     from utils import calculate_macro_f05
+    from gold import GoldResolutionEngine
 
 
 class EntityResolutionModel:
@@ -39,13 +42,15 @@ class EntityResolutionModel:
         pair_keys: List[Tuple[str, str]],
         val_s1_ids: Set[str],
         ground_truth: Dict[str, Set[str]],
+        val_metas: Optional[List[dict]] = None,
         thresholds: List[float] = None
     ) -> Tuple[float, float]:
         """
         Grid search for decision threshold that maximizes Macro F_0.5 on validation split.
+        Uses Medallion Gold precision gating if metadata is provided.
         """
         if thresholds is None:
-            thresholds = [0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]
+            thresholds = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.78, 0.80, 0.82]
             
         probs = self.predict_proba(X_val)
         best_th = self.threshold
@@ -55,10 +60,16 @@ class EntityResolutionModel:
         for th in thresholds:
             th = round(float(th), 2)
             preds_by_s1 = {s1_id: [] for s1_id in val_s1_ids}
-            for (s1_id, cid), prob in zip(pair_keys, probs):
-                if prob >= th:
-                    preds_by_s1[s1_id].append(cid)
-                    
+            
+            if val_metas is not None:
+                for (s1_id, cid), meta, prob in zip(pair_keys, val_metas, probs):
+                    if GoldResolutionEngine.apply_precision_gate(meta, prob, th):
+                        preds_by_s1[s1_id].append(cid)
+            else:
+                for (s1_id, cid), prob in zip(pair_keys, probs):
+                    if prob >= th:
+                        preds_by_s1[s1_id].append(cid)
+                        
             f05 = calculate_macro_f05(val_gt, preds_by_s1)
             empty_cnt = sum(1 for sid, m in preds_by_s1.items() if len(m) == 0)
             print(f"  Threshold {th:.2f}: Macro F_0.5 = {f05:.4f} (Singletons: {empty_cnt/len(val_s1_ids)*100:.2f}%)")

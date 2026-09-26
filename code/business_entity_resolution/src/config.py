@@ -72,7 +72,7 @@ class Config:
     })
     
     # Classification threshold for F_0.5 score
-    DEFAULT_THRESHOLD: float = 0.55
+    DEFAULT_THRESHOLD: float = 0.70
     
     # Training sample size for model fitting (representative subset)
     TRAIN_SAMPLE_SIZE: int = 100000
