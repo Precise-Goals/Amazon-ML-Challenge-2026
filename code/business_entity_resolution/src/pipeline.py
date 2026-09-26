@@ -2,19 +2,22 @@
 Medallion Architecture Execution Pipeline for Business Entity Resolution.
 Supports:
   --mode train     : Train model on train dataset & tune F_0.5 threshold
-  --mode predict   : Run candidate generation & inference on test dataset
+  --mode predict   : Run candidate generation, inference & bipartite disambiguation
   --mode all       : Train model, optimize threshold, and generate test outputs
 """
 
 import os
 import sys
 import gc
+import re
 import time
 import argparse
 import shutil
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Set, Tuple
+from collections import defaultdict, Counter
+from rapidfuzz import fuzz
 
 # Ensure src directory is in sys.path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -282,7 +285,79 @@ def predict_pipeline(model_wrapper: EntityResolutionModel = None):
                 s1, _, rest = line.partition("\t")
                 all_chunks_cand[s1] = rest.rstrip("\n")
                 
-    # 1. Write matching_results.tsv
+    # 1. Bipartite Disjoint Disambiguation & Co-Tenant Budget Gating
+    print("Applying Global Bipartite Disjoint Matching & Co-Tenant Budget Gating...", flush=True)
+    cand_to_s1 = defaultdict(list)
+    for s1, m_str in all_chunks_match.items():
+        if m_str:
+            for c in m_str.split(","):
+                c = c.strip()
+                if c:
+                    cand_to_s1[c].append(s1)
+                    
+    contested_cands = set(c for c, s1s in cand_to_s1.items() if len(s1s) > 1)
+    print(f"  Contested candidate IDs across multiple S1 entities: {len(contested_cands):,}")
+    
+    if contested_cands:
+        import duckdb
+        con_d = duckdb.connect()
+        con_d.execute("PRAGMA threads=8")
+        
+        contested_s1_ids = set()
+        for c in contested_cands:
+            contested_s1_ids.update(cand_to_s1[c])
+            
+        s1_c_df = pd.DataFrame({'entity_id': list(contested_s1_ids)})
+        s1_info_df = con_d.query(f"""
+            SELECT entity_id, business_name, business_address FROM read_csv('{config.TEST_S1}', delim='\\t', header=True)
+            WHERE entity_id IN (SELECT entity_id FROM s1_c_df)
+        """).df()
+        s1_txt = {r.entity_id: (str(r.business_name or "").lower(), str(r.business_address or "").lower()) for r in s1_info_df.itertuples()}
+        
+        c_c_df = pd.DataFrame({'entity_id': list(contested_cands)})
+        cand_info_df = con_d.query(f"""
+            SELECT entity_id, business_name, business_address FROM read_csv('{config.TEST_S2}', delim='\\t', header=True)
+            WHERE entity_id IN (SELECT entity_id FROM c_c_df)
+            UNION ALL
+            SELECT entity_id, business_name, business_address FROM read_csv('{config.TEST_S3}', delim='\\t', header=True)
+            WHERE entity_id IN (SELECT entity_id FROM c_c_df)
+        """).df()
+        cand_txt = {r.entity_id: (str(r.business_name or "").lower(), str(r.business_address or "").lower()) for r in cand_info_df.itertuples()}
+        
+        # Disambiguate: assign each contested candidate strictly to the single highest-scoring S1 entity
+        cand_winner = {}
+        for cid in contested_cands:
+            c_n, c_a = cand_txt.get(cid, ("", ""))
+            best_s1 = None
+            best_sc = -1.0
+            for sid in cand_to_s1[cid]:
+                s_n, s_a = s1_txt.get(sid, ("", ""))
+                n_sim = fuzz.token_set_ratio(s_n, c_n)
+                a_sim = fuzz.token_set_ratio(s_a, c_a) if s_a and c_a else 0.0
+                sc = 0.6 * n_sim + 0.4 * a_sim
+                if sc > best_sc:
+                    best_sc = sc
+                    best_s1 = sid
+            cand_winner[cid] = best_s1
+            
+        del con_d, s1_c_df, c_c_df, s1_info_df, cand_info_df, s1_txt, cand_txt
+        gc.collect()
+        
+        # Apply winner filter
+        for s1, m_str in list(all_chunks_match.items()):
+            if not m_str:
+                continue
+            m_list = [c.strip() for c in m_str.split(",") if c.strip()]
+            new_m = []
+            for c in m_list:
+                if c in contested_cands:
+                    if cand_winner.get(c) == s1:
+                        new_m.append(c)
+                else:
+                    new_m.append(c)
+            all_chunks_match[s1] = ",".join(new_m)
+            
+    # 2. Write matching_results.tsv
     print(f"Saving {config.MATCHING_OUTPUT}...", flush=True)
     matched_count = 0
     singleton_count = 0
@@ -299,7 +374,7 @@ def predict_pipeline(model_wrapper: EntityResolutionModel = None):
                 singleton_count += 1
             f.write(f"{s1_id}\t{val}\n")
             
-    # 2. Write candidate_pairs.tsv
+    # 3. Write candidate_pairs.tsv
     print(f"Saving {config.CANDIDATE_OUTPUT}...", flush=True)
     total_cands_written = 0
     with open(config.CANDIDATE_OUTPUT, "w", encoding="utf-8") as f:
@@ -320,7 +395,7 @@ def predict_pipeline(model_wrapper: EntityResolutionModel = None):
     print(f"  Avg Candidates per S1: {avg_cands:.2f}")
     print(f"  Total Inference Time: {time.time()-t0:.2f}s")
     
-    # 3. Automatic Validation Check
+    # 4. Automatic Validation Check
     validator_path = os.path.join(config.BASE_DIR, "datasource", "utils", "validate_submission.py")
     if os.path.exists(validator_path):
         print("\n" + "=" * 60)
