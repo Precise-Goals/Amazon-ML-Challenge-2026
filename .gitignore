@@ -38,3 +38,6 @@ Thumbs.db
 # Scratch & Logs
 *.log
 scratch/
+
+# v3 pipeline artifacts (universes, logs)
+artifacts/

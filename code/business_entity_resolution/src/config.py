@@ -33,6 +33,7 @@ class Config:
     # Blocking parameters
     MAX_POSTINGS_PER_KEY: int = 50       # Max candidate matches per individual key
     TOP_K_CANDIDATES: int = 15           # Maximum candidates retained per S1 entity
+    UNIVERSE_TOP_K: int = 12             # v3: one top_k shared by train and test universes
     MIN_TOKEN_LEN: int = 3               # Minimum character length for tokens
     PREFIX_LEN: int = 4                  # Character prefix length
     
