@@ -15,6 +15,7 @@ STREET_ABBRS = {
     r'\brd\b': 'road',
     r'\bave\b': 'avenue',
     r'\bblvd\b': 'boulevard',
+    r'\bbd\b': 'boulevard',
     r'\bln\b': 'lane',
     r'\bdr\b': 'drive',
     r'\bct\b': 'court',
@@ -30,9 +31,25 @@ STREET_ABBRS = {
     r'\bno\b': 'number',
     r'\bsec\b': 'sector',
     r'\bblk\b': 'block',
+    # French street abbreviations
+    r'\brue\b': 'rue',
+    r'\br\b': 'rue',
+    r'\bav\b': 'avenue',
+    r'\bch\b': 'chemin',
+    r'\bchemin\b': 'chemin',
+    r'\bimp\b': 'impasse',
+    r'\bimpasse\b': 'impasse',
+    r'\ball\b': 'allee',
+    r'\ballee\b': 'allee',
+    r'\bcrs\b': 'cours',
+    r'\bcour2\b': 'cours',
+    r'\bcours\b': 'cours',
+    r'\brte\b': 'route',
+    r'\broute\b': 'route',
+    r'\bfbg\b': 'faubourg',
 }
 
-# Legal corporate forms (English + Hindi Devanagari)
+# Legal corporate forms (English + Hindi Devanagari + French)
 LEGAL_FORMS = [
     (r'\b(private\s+limited|pvt\s+ltd|pvt\.\s*ltd|pvt\s+limited|private\s+ltd)\b', 'pvtltd'),
     (r'\b(public\s+limited|public\s+ltd)\b', 'publicltd'),
@@ -45,10 +62,16 @@ LEGAL_FORMS = [
     (r'\b(limited\s+liability\s+partnership|l\.l\.p\.|llp)\b', 'llp'),
     (r'\b(limited|ltd\.|ltd)\b', 'ltd'),
     (r'\b(company|co\.|co)\b', 'co'),
+    # French corporate forms
+    (r'\b(s\.a\.s\.u\.|sasu)\b', 'sasu'),
+    (r'\b(s\.a\.s\.|sas)\b', 'sas'),
     (r'\b(s\.a\.r\.l\.|sarl)\b', 'sarl'),
+    (r'\b(e\.u\.r\.l\.|eurl)\b', 'eurl'),
     (r'\b(s\.a\.|sa)\b', 'sa'),
-    (r'\b(gmbh)\b', 'gmbh'),
     (r'\b(s\.c\.i\.|sci)\b', 'sci'),
+    (r'\b(s\.n\.c\.|snc)\b', 'snc'),
+    (r'\b(e\.i\.|ei)\b', 'ei'),
+    (r'\b(gmbh)\b', 'gmbh'),
 ]
 
 # Devanagari transliteration mapping

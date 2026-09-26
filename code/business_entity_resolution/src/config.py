@@ -41,18 +41,21 @@ class Config:
         'the', 'and', 'inc', 'corp', 'corporation', 'llc', 'llp', 'ltd', 'limited',
         'pvt', 'private', 'co', 'company', 'sa', 'sarl', 'gmbh', 'services', 'solutions',
         'enterprises', 'traders', 'group', 'india', 'hotel', 'shree', 'sri', 'new',
-        'dr', 'mr', 'mrs', 'saint', 'restaurant', 'cafe', 'bar', 'store', 'shop'
+        'dr', 'mr', 'mrs', 'saint', 'restaurant', 'cafe', 'bar', 'store', 'shop',
+        'sas', 'sasu', 'eurl', 'sci', 'snc', 'france', 'association', 'societe', 'club', 'centre'
     })
     
     ADDR_STOP_WORDS: Set[str] = field(default_factory=lambda: {
         'near', 'behind', 'opp', 'opposite', 'shop', 'no', 'floor', 'suite', 'ste',
         'unit', 'apt', 'apartment', 'bldg', 'building', 'road', 'rd', 'street', 'st',
-        'avenue', 'ave', 'lane', 'ln', 'drive', 'dr', 'court', 'ct', 'boulevard', 'blvd',
+        'avenue', 'ave', 'lane', 'ln', 'drive', 'dr', 'court', 'ct', 'boulevard', 'blvd', 'bd',
         'highway', 'hwy', 'phase', 'block', 'sector', 'post', 'po', 'box', 'pmb',
         'nagar', 'colony', 'marg', 'puram', 'pradesh', 'state', 'district', 'dist',
         'bengal', 'maharashtra', 'karnataka', 'tamil', 'nadu', 'delhi', 'mumbai',
         'calcutta', 'kolkata', 'chennai', 'hyderabad', 'bangalore', 'bengaluru',
-        'village', 'post', 'taluk', 'tehsil', 'west', 'east', 'north', 'south'
+        'village', 'post', 'taluk', 'tehsil', 'west', 'east', 'north', 'south',
+        'rue', 'chemin', 'impasse', 'cours', 'allee', 'place', 'route', 'faubourg',
+        'de', 'du', 'la', 'des', 'le', 'les'
     })
     
     # LightGBM Classifier Parameters
