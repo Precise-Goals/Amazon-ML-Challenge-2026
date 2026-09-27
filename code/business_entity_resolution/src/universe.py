@@ -144,10 +144,10 @@ def build_universe(s1_path: str, s2_path: str, s3_path: str, out_dir: str,
         for i in range(len(ids)):
             pool[ids[i]] = normalize_silver_entity(names[i], addrs[i])
         gold = GoldResolutionEngine(top_k=top_k)
-        gold.build_index(ids, [pool[e] for e in ids], ctry)
+        gold.build_index(ids, pool, ctry)
         for d in pool.values():          # 'words' only feeds index keys; free it
             d.pop('words', None)
-        del ids, names, addrs, ctry
+        del names, addrs, ctry
         gc.collect()
         log(f"[universe] {country}: silver+index {time.time()-t0:.0f}s, keys={len(gold.index):,}")
 

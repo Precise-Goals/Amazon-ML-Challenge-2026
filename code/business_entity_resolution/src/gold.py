@@ -28,7 +28,8 @@ class GoldResolutionEngine:
         self.addr_stopwords = addr_stopwords if addr_stopwords is not None else config.ADDR_STOP_WORDS
         self.max_postings = max_postings if max_postings is not None else config.MAX_POSTINGS_PER_KEY
         self.top_k = top_k if top_k is not None else config.TOP_K_CANDIDATES
-        self.index: Dict[Tuple, List[str]] = {}
+        self.index: Dict[Any, List[int]] = {}
+        self.entity_ids: Optional[np.ndarray] = None
 
     def extract_keys(self, silver_entity: dict, country: str) -> List[Tuple]:
         """Extract multi-pass blocking keys from Silver entity representation."""
@@ -82,22 +83,45 @@ class GoldResolutionEngine:
             for sn in nums[:2]:
                 keys.append(('st_sn', country, st, sn))
 
+        # 5. Brand + Street Number / Postal Anchors (High Recall & Precision)
+        if tokens and nums:
+            for sn in nums[:2]:
+                keys.append(('bn_sn', country, tokens[0], sn))
+
+        if tokens and zip_code:
+            keys.append(('bn_zip', country, tokens[0], zip_code))
+
+        # 6. Consonant Skeleton (bridges typos and phonetic transliterations)
+        if tokens and len(tokens[0]) >= 4:
+            t0 = tokens[0]
+            skel = t0[0] + ''.join(c for c in t0[1:] if c not in 'aeiouy')
+            if len(skel) >= 3:
+                collapsed = [skel[0]]
+                for ch in skel[1:]:
+                    if ch != collapsed[-1]:
+                        collapsed.append(ch)
+                sk = ''.join(collapsed)[:6]
+                if len(sk) >= 3:
+                    keys.append(('skel', country, sk))
+
         return keys
 
-    def build_index(self, entity_ids: np.ndarray, silver_entities: List[dict], countries: np.ndarray):
-        """Build inverted index directly from arrays with posting length capping."""
+    def build_index(self, entity_ids: np.ndarray, silver_entities: Any, countries: np.ndarray):
+        """Build compact inverted index directly from arrays with posting length capping."""
         self.index.clear()
+        self.entity_ids = entity_ids
         cap = self.max_postings + 1
         n = len(entity_ids)
+        is_dict = isinstance(silver_entities, dict)
         for i in range(n):
-            eid = entity_ids[i]
-            c_keys = self.extract_keys(silver_entities[i], countries[i])
+            ent = silver_entities[entity_ids[i]] if is_dict else silver_entities[i]
+            c_keys = self.extract_keys(ent, countries[i])
             for k in c_keys:
                 p = self.index.get(k)
                 if p is None:
-                    self.index[k] = [eid]
+                    self.index[k] = [i]
                 elif len(p) < cap:
-                    p.append(eid)
+                    p.append(i)
 
     def query_and_rank_candidates(
         self,
@@ -110,13 +134,13 @@ class GoldResolutionEngine:
         and extracts 24 dense features for candidate pairs.
         """
         q_keys = self.extract_keys(s1_entity, country)
-        cands = set()
+        cand_indices = set()
         for k in q_keys:
             postings = self.index.get(k)
             if postings and len(postings) <= self.max_postings:
-                cands.update(postings)
+                cand_indices.update(postings)
 
-        if not cands:
+        if not cand_indices:
             return [], [], []
 
         s1_b = s1_entity['brand']
@@ -126,7 +150,8 @@ class GoldResolutionEngine:
         s1_has_a = s1_entity['has_addr']
 
         scored = []
-        for cid in cands:
+        for idx in cand_indices:
+            cid = str(self.entity_ids[idx]) if self.entity_ids is not None else str(idx)
             c_data = silver_pool_lookup.get(cid)
             if not c_data:
                 continue
