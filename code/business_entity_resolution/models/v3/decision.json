@@ -1,8 +1,9 @@
 {
-  "th_s2": 0.575,
+  "th_s2": 0.6,
   "th_s3": 0.575,
   "train_countries": [
-    "India"
+    "India",
+    "US"
   ],
   "features": [
     "n_ratio",
@@ -50,5 +51,5 @@
     "c_addr_missing"
   ],
   "top_k": 12,
-  "run_id": "20260926-184448"
+  "run_id": "20260927-103428"
 }
