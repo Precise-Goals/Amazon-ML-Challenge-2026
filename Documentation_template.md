@@ -1,14 +1,14 @@
 # ML Challenge 2026: Business Entity Resolution Solution Template
 
-**Team Name:** Antigravity ER Lab  
+**Team Name:** Falcons  
 **Team Members:** Machine Learning Engineering Team  
-**Submission Date:** 2026-09-26  
-**Latest Official Portal Score:** **`0.776`** (Macro $F_{0.5}$)  
+**Submission Date:** 2026-10-02  
+**Latest Official Portal Score:** **`0.880`** (Macro $F_{0.5}$)  
 
 ---
 
 ## 1. Executive Summary
-We present a scalable, high-precision Business Entity Resolution system engineered using an advanced **Medallion Data Architecture (Bronze $\rightarrow$ Silver $\rightarrow$ Gold)** to link fragmented and noisy commercial entity records across multiple disparate sources (Source 1, Source 2, and Source 3) without external data lookup. Our approach couples a zero-copy streaming Bronze ingestion layer with a Silver canonicalization layer (featuring phonetic Devanagari transliteration, French & English legal form isolation, and address normalization) and a Gold precision resolution engine. The Gold engine features multi-pass frequency-capped blocking, a **43-feature Gradient Boosted Decision Tree matcher** with **Group Context** and **Reverse Context**, **Isotonic Probability Calibration**, an **Asymmetric Decision Boundary** ($\theta_{S_2} = 0.70, \theta_{S_3} = 0.65$), a **Top-12 Learned Candidate Pruner**, and a **Global Greedy Bipartite Exclusivity Layer**. On the full 1.73M entity test set, the pipeline achieves **100% compliance** with the official competition validator, resolving **15,255 contested candidate collisions**, achieving **3.76 average matches per entity** (closely matching the ground-truth benchmark of 3.66), and reaching a new peak portal score of **`0.776`**.
+We present a scalable, high-precision Business Entity Resolution system engineered using an advanced **Medallion Data Architecture (Bronze $\rightarrow$ Silver $\rightarrow$ Gold)** to link fragmented and noisy commercial entity records across multiple disparate sources (Source 1, Source 2, and Source 3) without external data lookup. Our approach couples a zero-copy streaming Bronze ingestion layer with a Silver canonicalization layer (featuring phonetic Devanagari transliteration, French & English legal form isolation, and address normalization) and a Gold precision resolution engine. The Gold engine features multi-pass frequency-capped blocking with composite `bn_sn` / `bn_zip` / `skel` anchors, a **43-feature Gradient Boosted Decision Tree matcher** with **Group Context** and **Reverse Context**, **Isotonic Probability Calibration**, a **Unified India+US training corpus** (2.2M entities, 24.9M pairs), **Country-Aware Conservative Threshold Offsets** (+0.05 for unseen France), and a **Global Greedy Bipartite Exclusivity Layer**. The pipeline trains a 5-fold LightGBM ensemble achieving out-of-fold Macro $F_{0.5}$ of **0.9087** and reaches a new peak portal score of **`0.880`** with 100% compliance with the official competition validator.
 
 ---
 
@@ -84,8 +84,10 @@ To reduce the $1.73\text{M} \times 10\text{M} \approx 17.3 \text{ Trillion}$ com
 
 ## 5. Results & Error Analysis
 
-- **Official Leaderboard Score:** **`0.776`** (Macro $F_{0.5}$).
-- **Hold-out Validation Macro $F_{0.5}$:** **`0.9643`**.
+- **Official Leaderboard Score:** **`0.880`** (Macro $F_{0.5}$) — selected submission.
+- **Training Out-Of-Fold Macro $F_{0.5}$:** **`0.9087`** (Micro Precision 96.84%).
+- **Training Configuration:** 5-fold LightGBM ensemble, unified India+US corpus (2.2M entities, 24.9M labeled pairs).
+- **Unseen Country Strategy:** France was absent from training. A conservative +0.05 threshold offset was applied to the France partition to maximise precision on unseen distribution.
 - **Average Matches per Entity:** **`3.76`** (vs Ground Truth benchmark of `3.66`).
 - **Singletons Rate:** **`4.76%`** (`82,438` entities), restoring singleton balance towards the ground-truth benchmark (~5.58%).
 - **Candidate Set Size:** **`11.14`** candidates per Source 1 entity (Top-12 capped).
@@ -95,14 +97,14 @@ To reduce the $1.73\text{M} \times 10\text{M} \approx 17.3 \text{ Trillion}$ com
 
 | Partition | Entities | Avg Matches | Singletons | Key Characteristic |
 | :--- | :---: | :---: | :---: | :--- |
-| **India** | 809,986 | **3.69** | **6.44%** | Near-perfect alignment with Ground Truth (3.66). |
-| **US** | 663,106 | **3.99** | **2.22%** | Franchise/chain overmatching suppressed singletons. |
-| **France** | 259,452 | **3.36** | **5.99%** | Zero-shot transfer (France was absent from training). |
+| **India** | 809,986 | **3.69** | **6.44%** | Near-perfect alignment with Ground Truth (3.66). Devanagari transliteration key. |
+| **US** | 663,106 | **3.99** | **2.22%** | Largest pool (6.2M entities). Contiguous int32 indexing eliminated OOM. |
+| **France** | 259,452 | **3.36** | **5.99%** | Zero-shot transfer. +0.05 conservative offset applied to maximise precision. |
 
 ---
 
 ## 6. Conclusion
-The advanced Medallion Data Architecture delivers an end-to-end, memory-safe, reproducible Business Entity Resolution pipeline that unifies streaming ingestion, multilingual canonicalization, 43-feature context-aware tree matching, probability calibration, and greedy bipartite exclusivity. It achieves an official leaderboard score of **`0.776`**, executing across 1.73M test entities and 10M candidate pool records with complete memory stability and zero external data dependencies.
+The advanced Medallion Data Architecture delivers an end-to-end, memory-safe, reproducible Business Entity Resolution pipeline that unifies streaming ingestion, multilingual canonicalization, 43-feature context-aware tree matching, probability calibration, and greedy bipartite exclusivity. It achieves an official leaderboard score of **`0.880`**, executing across 1.73M test entities and 10M candidate pool records with complete memory stability and zero external data dependencies. The key breakthroughs were: (1) unified India+US training (eliminating the zero-shot US penalty), (2) contiguous int32 indexing for memory-safe 6.2M-entity US pool processing, and (3) a country-aware +0.05 conservative threshold offset for the unseen France partition.
 
 ---
 
